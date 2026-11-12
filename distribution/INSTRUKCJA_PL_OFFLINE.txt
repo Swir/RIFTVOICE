@@ -1,0 +1,30 @@
+RIFTVOICE 0.3.0 by Swir - Windows 11 64-bit
+============================================================
+GOTOWA PACZKA: Nie potrzebujesz Pythona, Go, .NET ani pobierania
+programu VB-CABLE. Oryginalny sterownik jest w folderze third_party.
+
+1. Rozpakuj CALA paczke ZIP do folderu, np. Pobrane/RiftVoice.
+2. Kliknij START_TUTAJ.cmd. Nie otwieraj bezposrednio z podgladu ZIP.
+3. Jesli nie wykryto wirtualnego mikrofonu, zaakceptuj instalacje
+   VB-CABLE zawartego w paczce. Potwierdz komunikat UAC administratora.
+   Instalator producenta moze wymagac restartu Windows.
+4. Jesli potrzebny byl restart, kliknij ponownie START_TUTAJ.cmd.
+5. W RiftVoice wybierz swoj fizyczny MIKROFON po lewej,
+   a po prawej CABLE Input (VB-Audio Virtual Cable).
+6. Wybierz np. DEMON, potem START LIVE. Sprawdz wskazniki glosu.
+7. W Steam i CS2 wybierz mikrofon CABLE Output (VB-Audio Virtual Cable).
+8. Dzwiek GRY pozostaw na sluchawkach, nigdy na CABLE Input.
+
+INSTALUJ_VIRTUAL_MIC.cmd - instalacja drivera na zyczenie.
+RiftVoice.exe - normalny start gdy wirtualny mikrofon jest zainstalowany.
+
+Nie wykonujemy automatycznego restartu komputera, nie zmieniamy
+domyslnego audio, nie ingerujemy w gry ani anti-cheat.
+
+VB-CABLE to oddzielny produkt firmy VB-Audio (www.vb-cable.com).
+Jest to DONATIONWARE. Wsparcie projektu jest mile widziane.
+W srodowisku profesjonalnym obowiazuja oddzielne zasady licencji.
+https://vb-audio.com/Services/licensing.htm
+
+UWAGA: testy DSP i budowanie na Windows Runnerze nie oznaczaja,
+ze przekaz glosu do CS2 przetestowano na konkretnym mikrofonie.
