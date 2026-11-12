@@ -1,0 +1,121 @@
+name: RiftVoice - complete Windows 11 offline ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-package-release:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Extract source and apply 0.3.0 safety upgrades
+        shell: pwsh
+        run: |
+          $bundle = 'distribution/RiftVoice_0.2.0_source_archive.b64'
+          if (-not (Test-Path $bundle)) { throw 'Missing source archive.' }
+          $encoded = (Get-Content $bundle -Raw) -replace '\s+', ''
+          [IO.File]::WriteAllBytes('source_archive.tar.xz', [Convert]::FromBase64String($encoded))
+          tar -xJf source_archive.tar.xz
+          if ($LASTEXITCODE -ne 0) { throw 'Source tar extraction failed.' }
+          Remove-Item source_archive.tar.xz
+          git apply --check distribution/source_upgrade_0.3.0.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Upgrade patch cannot be applied.' }
+          git apply distribution/source_upgrade_0.3.0.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Upgrade patch failed.' }
+          if (!(Test-Path source/go.mod)) { throw 'No Go source.' }
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Test DSP engine on Windows
+        working-directory: source
+        shell: pwsh
+        run: |
+          go test -count=1 ./...
+          if ($LASTEXITCODE -ne 0) { throw 'DSP unit tests failed.' }
+      - name: Build native x64 EXE
+        working-directory: source
+        shell: pwsh
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: |
+          go build -trimpath -ldflags='-H=windowsgui -s -w' -o ../RiftVoice.exe .
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path ../RiftVoice.exe)) { throw 'Windows EXE failed.' }
+      - name: Generate gamer icon
+        shell: pwsh
+        run: |
+          & ./tools/Generate-Icon.ps1
+          if (!(Test-Path 'RiftVoice.ico')) { throw 'App icon missing.' }
+      - name: Download original VB-Audio driver for OFFLINE use
+        shell: pwsh
+        run: |
+          $url = 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack46.zip'
+          $dest = Join-Path $pwd 'VBCABLE_Driver_Pack46.zip'
+          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -TimeoutSec 120
+          if ((Get-Item $dest).Length -lt 100000) { throw 'Vendor driver ZIP missing.' }
+          Add-Type -AssemblyName System.IO.Compression
+          $z = [IO.Compression.ZipFile]::OpenRead($dest)
+          try {
+            if (@($z.Entries | Where-Object { $_.Name -ieq 'VBCABLE_Setup_x64.exe' }).Count -lt 1) {
+              throw 'Vendor ZIP does not contain x64 installer.'
+            }
+          } finally { $z.Dispose() }
+          Get-FileHash $dest -Algorithm SHA256 | Format-List
+      - name: Assemble the full offline package
+        shell: pwsh
+        run: |
+          $folder = 'RiftVoice_0.3.0_by_Swir_Windows11_x64'
+          New-Item -ItemType Directory $folder -Force | Out-Null
+          New-Item -ItemType Directory "$folder/third_party" -Force | Out-Null
+          $files = @('RiftVoice.exe','RiftVoice.ico','START_TUTAJ.cmd','INSTALUJ_VIRTUAL_MIC.cmd','README.md')
+          foreach ($f in $files) { Copy-Item $f "$folder/$f" -ErrorAction Stop }
+          foreach ($d in @('source','tools','docs')) { Copy-Item $d "$folder/$d" -Recurse -ErrorAction Stop }
+          foreach ($f in @('URUCHOM_RIFTVOICE.cmd','DIAGNOSTYKA_AUDIO.cmd','OTWORZ_USTAWIENIA_DZWIEKU.cmd')) {
+            if (Test-Path $f) { Copy-Item $f "$folder/$f" }
+          }
+          Copy-Item 'distribution/INSTRUKCJA_PL_OFFLINE.txt' "$folder/INSTRUKCJA_PL.txt" -ErrorAction Stop
+          Copy-Item 'VBCABLE_Driver_Pack46.zip' "$folder/third_party/VBCABLE_Driver_Pack46.zip" -ErrorAction Stop
+          Get-ChildItem $folder -Recurse -File | ForEach-Object {
+            '{0} *{1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.FullName.Substring((Resolve-Path $folder).Path.Length + 1).Replace('\','/')
+          } | Out-File "$folder/SHA256SUMS.txt" -Encoding utf8
+          $zip = 'RiftVoice_0.3.0_by_Swir_OFFLINE_CS2_Windows11_x64.zip'
+          Compress-Archive -Path $folder -DestinationPath $zip -CompressionLevel Optimal -Force
+          if (!(Test-Path $zip) -or (Get-Item $zip).Length -lt 1000000) { throw 'Offline ZIP validation failed.' }
+          Get-FileHash $zip -Algorithm SHA256 | Format-List
+      - name: Upload complete Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: RiftVoice-0.3.0-Offline-Windows11-x64
+          path: RiftVoice_0.3.0_by_Swir_OFFLINE_CS2_Windows11_x64.zip
+          if-no-files-found: error
+          retention-days: 90
+      - name: Publish v0.3.0 GitHub Release
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          @'
+          RiftVoice 0.3.0 by Swir for Windows 11 x64.
+          Complete ZIP with native RiftVoice.exe and the UNMODIFIED vendor VB-CABLE driver.
+          No separate Python, Go, .NET, or cable download needed.
+          1. Extract ZIP, 2. START_TUTAJ.cmd, 3. Approve one-time VB-Audio/UAC setup if needed.
+          4. In RiftVoice select microphone -> CABLE Input, start live.
+          5. In Steam/CS2 set microphone -> CABLE Output.
+          VB-CABLE by VB-Audio www.vb-cable.com is donationware; donations welcome.
+          IMPORTANT: Steam/CS2 live hardware tests are still pending.
+          Driver installation may require Windows restart.
+          '@ | Out-File release-notes.txt -Encoding utf8
+          gh release create 'v0.3.0' 'RiftVoice_0.3.0_by_Swir_OFFLINE_CS2_Windows11_x64.zip' --title 'RiftVoice 0.3.0 - OFFLINE Windows 11 x64' --notes-file release-notes.txt
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed.' }
