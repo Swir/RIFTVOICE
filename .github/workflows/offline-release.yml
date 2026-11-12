@@ -1,0 +1,83 @@
+name: RiftVoice - offline release (cross-compile)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/offline-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-offline-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore source and apply 0.3.0 changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d distribution/RiftVoice_0.2.0_source_archive.b64 > source_archive.tar.xz
+          tar -xJf source_archive.tar.xz
+          rm source_archive.tar.xz
+          git apply --check distribution/source_upgrade_0.3.0.patch
+          git apply distribution/source_upgrade_0.3.0.patch
+          test -f source/go.mod
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Run DSP tests
+        shell: bash
+        working-directory: source
+        run: go test -count=1 ./...
+      - name: Build Windows EXE
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-H=windowsgui -s -w' -o ../RiftVoice.exe .
+          file ../RiftVoice.exe
+      - name: Get original VB-CABLE package for offline distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fLSs --retry 4 --retry-delay 3 --max-time 120 -A 'Mozilla/5.0' 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack46.zip' -o VBCABLE_Driver_Pack46.zip
+          sha256sum VBCABLE_Driver_Pack46.zip
+      - name: Build complete ZIP and verify files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 package_offline.py
+          unzip -t RiftVoice_0.3.0_by_Swir_OFFLINE_CS2_Windows11_x64.zip | tail -2
+      - name: Publish tested build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RiftVoice-0.3.0-by-Swir-Windows11-OFFLINE
+          path: RiftVoice_0.3.0_by_Swir_OFFLINE_CS2_Windows11_x64.zip
+          if-no-files-found: error
+          retention-days: 90
+      - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > release-notes.txt <<'EOF'
+          RiftVoice 0.3.0 by Swir, Windows 11 x64.
+          Complete offline ZIP with native RiftVoice.exe and ORIGINAL, UNMODIFIED VB-Audio VB-CABLE driver (Pack46).
+          No Python, Go, .NET or separate driver download required by the player.
+          Extract ZIP, run START_TUTAJ.cmd, and approve one-time vendor driver/UAC installation if needed.
+          In RiftVoice: microphone -> CABLE Input -> START LIVE; in Steam/CS2 select CABLE Output as microphone.
+          VB-CABLE is donationware by www.vb-cable.com; donations welcome.
+          Driver may require Windows reboot. Actual Steam/CS2 live hardware validation remains pending.
+          EOF
+          asset='RiftVoice_0.3.0_by_Swir_OFFLINE_CS2_Windows11_x64.zip'
+          if gh release view v0.3.0 >/dev/null 2>&1; then
+            gh release upload v0.3.0 "$asset" --clobber
+          else
+            gh release create v0.3.0 "$asset" --title 'RiftVoice 0.3.0 — offline Windows 11 x64' --notes-file release-notes.txt
+          fi
