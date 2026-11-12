@@ -1,0 +1,146 @@
+--- a/source/audio_windows.go
++++ b/source/audio_windows.go
+@@ -256,6 +256,17 @@
+ func (e *Engine) setLive() { e.mu.Lock(); e.status = "NA ŻYWO"; e.detail = ""; e.mu.Unlock() }
+ 
+ func (e *Engine) stream(inputID, outputID uint32, stop <-chan struct{}) error {
++	// Defence in depth: never play voice audio into physical speakers by mistake.
++	cableVerified := false
++	for _, dev := range AudioOutputs() {
++		if dev.ID == outputID && likelyCable(dev.Name) {
++			cableVerified = true
++			break
++		}
++	}
++	if !cableVerified {
++		return errors.New("wyjście nie jest wirtualnym mikrofonem VB-CABLE")
++	}
+ 	ev, _, _ := createEvent.Call(0, 0, 0, 0) // auto-reset, capture device event
+ 	if ev == 0 {
+ 		return errors.New("nie można utworzyć zdarzenia audio")
+--- a/source/ui_windows.go
++++ b/source/ui_windows.go
+@@ -224,6 +224,18 @@
+ 	}
+ 	return 0
+ }
++
++// Only audio outputs that are known virtual cables can become the game microphone.
++// Hardware speakers are deliberately excluded to prevent feedback.
++func nextCableOutput(devs []AudioDevice, prev int) int {
++	for offset := 1; offset <= len(devs); offset++ {
++		i := (prev + offset) % len(devs)
++		if i >= 0 && likelyCable(devs[i].Name) {
++			return i
++		}
++	}
++	return -1
++}
+ func (a *App) drawDevices(hdc uintptr) {
+ 	label(hdc, 26, 101, 470, 20, "WEJŚCIE  /  MIKROFON", a.fontBold, grey, dtLeft)
+ 	label(hdc, 535, 101, 464, 20, "WYJŚCIE  /  WIRTUALNY KABEL", a.fontBold, grey, dtLeft)
+@@ -262,7 +274,7 @@
+ 	label(dc, 90, 17, 520, 33, "RIFTVOICE", a.fontTitle, white, dtLeft)
+ 	label(dc, 91, 52, 480, 20, "VOICE TRANSFORMER   /   by Swir", a.fontSmall, purple, dtLeft)
+ 	buttonShape(dc, 884, 23, 137, 37, panel2, line)
+-	label(dc, 887, 25, 130, 33, "VB-CABLE  ↗", a.fontBold, cyan, dtCenter)
++	label(dc, 887, 25, 130, 33, "SETUP MIC", a.fontBold, cyan, dtCenter)
+ 	a.drawDevices(dc)
+ 	// Preset grid
+ 	label(dc, 26, 194, 670, 26, "PRESETY GŁOSU", a.fontBold, white, dtLeft)
+@@ -418,7 +430,7 @@
+ }
+ func (a *App) choose(x, y int) {
+ 	if y >= 23 && y <= 60 && x >= 884 && x < 1022 {
+-		openOfficialCable()
++		launchBundledCableSetup()
+ 		return
+ 	}
+ 	if y >= 126 && y <= 182 {
+@@ -426,11 +438,21 @@
+ 		if running {
+ 			return
+ 		} // switching a live driver requires Stop first
+-		if x >= 25 && x <= 510 && len(a.inputs) > 0 {
+-			a.inIdx = (a.inIdx + 1) % len(a.inputs)
+-		}
+-		if x >= 533 && x <= 1022 && len(a.outputs) > 0 {
+-			a.outIdx = (a.outIdx + 1) % len(a.outputs)
++		if x >= 974 && x <= 1022 {
++			a.refresh()
++			a.updateSettings()
++			a.save()
++			return
++		}
++		if x >= 25 && x <= 510 {
++			if x >= 466 {
++				a.refresh() // Allow device hotplug without restarting the app.
++			} else if len(a.inputs) > 0 {
++				a.inIdx = (a.inIdx + 1) % len(a.inputs)
++			}
++		}
++		if x >= 533 && x <= 1022 {
++			a.outIdx = nextCableOutput(a.outputs, a.outIdx)
+ 		}
+ 	}
+ 	for i := 0; i < 9; i++ {
+@@ -452,7 +474,7 @@
+ 			_, _, _, _, _, running := a.engine.Snapshot()
+ 			if running {
+ 				a.engine.Stop()
+-			} else if a.inIdx >= 0 && a.outIdx >= 0 {
++			} else if a.inIdx >= 0 && a.outIdx >= 0 && likelyCable(a.outputs[a.outIdx].Name) {
+ 				a.engine.Start(a.inputs[a.inIdx].ID, a.outputs[a.outIdx].ID)
+ 			} else {
+ 				showCableAlert()
+@@ -493,13 +515,27 @@
+ }
+ func showCableAlert() {
+ 	title := syscall.StringToUTF16Ptr("RiftVoice - konfiguracja audio")
+-	body := syscall.StringToUTF16Ptr("Wybierz mikrofon oraz wyjście CABLE Input.\nZainstaluj VB-CABLE z oficjalnej strony, a następnie uruchom RiftVoice ponownie.\nKliknij przycisk VB-CABLE w prawym górnym rogu.")
++	body := syscall.StringToUTF16Ptr("Wybierz mikrofon oraz wyjście CABLE Input.\nKliknij SETUP MIC, aby uruchomić dołączony sterownik VB-CABLE.\nPo instalacji sterownika może być wymagany restart Windows.\nNastępnie kliknij ↻ przy wyjściu audio.")
+ 	user32.NewProc("MessageBoxW").Call(app.hwnd, uintptr(unsafe.Pointer(body)), uintptr(unsafe.Pointer(title)), 0x40)
+ }
+-func openOfficialCable() {
+-	verb := syscall.StringToUTF16Ptr("open")
+-	url := syscall.StringToUTF16Ptr("https://vb-audio.com/Cable/index.htm")
+-	shellExecute.Call(0, uintptr(unsafe.Pointer(verb)), uintptr(unsafe.Pointer(url)), 0, 0, 1)
++
++// Launch a user-visible bundled vendor installer. Never elevate, install or reboot silently.
++func launchBundledCableSetup() {
++	exe, err := os.Executable()
++	if err == nil {
++		path := filepath.Join(filepath.Dir(exe), "INSTALUJ_VIRTUAL_MIC.cmd")
++		if _, err := os.Stat(path); err == nil {
++			verb := syscall.StringToUTF16Ptr("open")
++			file := syscall.StringToUTF16Ptr(path)
++			ret, _, _ := shellExecute.Call(0, uintptr(unsafe.Pointer(verb)), uintptr(unsafe.Pointer(file)), 0, 0, 1)
++			if ret > 32 {
++				return
++			}
++		}
++	}
++	title := syscall.StringToUTF16Ptr("RiftVoice - instalacja mikrofonu")
++	msg := syscall.StringToUTF16Ptr("W tej paczce brakuje oryginalnego archiwum sterownika VB-CABLE. Pobierz pełną paczkę RiftVoice z GitHub Releases.")
++	user32.NewProc("MessageBoxW").Call(app.hwnd, uintptr(unsafe.Pointer(msg)), uintptr(unsafe.Pointer(title)), 0x30)
+ }
+ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
+ 	if app == nil {
+@@ -595,7 +631,7 @@
+ 	app.fontBold = font(16, 650)
+ 	app.fontTitle = font(24, 750)
+ 	module, _, _ := getModuleHandle.Call(0)
+-	className := syscall.StringToUTF16Ptr("RiftVoiceNativeV02")
++	className := syscall.StringToUTF16Ptr("RiftVoiceNativeV03")
+ 	cursor, _, _ := loadCursor.Call(0, 32512)
+ 	wc := WinClassEx{Style: 0x0008, WndProc: syscall.NewCallback(wndProc), Instance: module, Cursor: cursor, ClassName: className}
+ 	wc.Size = uint32(unsafe.Sizeof(wc))
+@@ -603,7 +639,7 @@
+ 	if atom == 0 {
+ 		return
+ 	}
+-	windowName := syscall.StringToUTF16Ptr("RiftVoice 0.2.0  |  by Swir")
++	windowName := syscall.StringToUTF16Ptr("RiftVoice 0.3.0  |  by Swir")
+ 	style := uintptr(wsOverlapped | wsCaption | wsSysMenu | wsMinimizeBox)
+ 	hwnd, _, _ := createWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(windowName)), style, 52, 0, windowWidth, windowHeight, 0, 0, module, 0)
+ 	if hwnd == 0 {
