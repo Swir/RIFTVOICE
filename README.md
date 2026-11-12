@@ -1,42 +1,38 @@
-# RiftVoice — by Swir 🎙️
+# RIFTVOICE 0.3.0 — by Swir 🎙️
 
-**RiftVoice 0.2.0** is a native Windows x64 real-time voice changer designed for gaming voice chat, including Steam and Counter-Strike 2 via a separate virtual audio cable.
+**Native gaming voice changer for Windows 11 x64.** Designed for Steam and Counter-Strike 2 voice chat, without modifying CS2 or injecting any DLLs.
 
-> **Testing status:** The original local Windows x64 EXE was cross-compiled and the DSP unit tests passed (13/13). The actual microphone/audio driver/Steam/CS2 route has **not** been tested on a real Windows 11 machine yet. Treat this as an **experimental build**, not a fully verified gaming release.
+### Download the complete offline package
 
-## Features
-- 9 voice presets (Natural, Deep Bass, Demon, Robot, Alien, Chipmunk, Radio, Megaphone, Narrator)
-- Live voice processing, mic/output device selection, mute/bypass, meters, noise gate
-- 6-button soundboard
-- Native Win32 user interface; no Python, .NET or Node runtime
-- Source code in Go, with DSP tests
+[**Releases — RiftVoice 0.3.0 Windows 11 x64**](https://github.com/Swir/RIFTVOICE/releases)
 
-## Installation and game setup
-1. Download the portable Windows x64 ZIP **when it appears under Releases**. Extract it and launch `RiftVoice.exe`.
-2. Install [VB-CABLE from the official vendor](https://vb-audio.com/Cable/index.htm) separately if you want to use RiftVoice as a microphone in games. We do not redistribute this third-party driver.
-3. In RiftVoice choose your physical microphone as input and **CABLE Input** as output.
-4. In Steam and CS2 select **CABLE Output** as microphone and test your voice in Steam before starting a competitive game.
-5. Keep game sound routed to headphones, **not** the cable, to avoid feedback.
+The ZIP includes the standalone `RiftVoice.exe` **and the unchanged official VB-Audio VB-CABLE installer**, so players do not need to install Python, Go, .NET or search for a driver download.
 
-## Build locally
-Requires Go 1.23+ on Windows x64.
+1. Extract the **entire ZIP** to a folder.
+2. Run `START_TUTAJ.cmd`. If the virtual microphone is missing, the included driver installer is offered with explicit confirmation; Windows will ask for administrator/UAC permission.
+3. Restart Windows **only if the VB-Audio driver requires it** (RiftVoice will not restart your PC).
+4. In RiftVoice select your microphone and **CABLE Input**, then click **START LIVE**.
+5. In Steam / Counter-Strike 2 select **CABLE Output** as microphone. Keep game audio on your headphones, not on the cable.
 
-```powershell
-cd source
-go test ./...
-go build -ldflags="-H=windowsgui -s -w" -o ..\RiftVoice.exe .
-```
+### Features
 
-Cross-compilation from Linux:
+- 9 presets: Natural, Deep Bass, Demon, Robot, Alien, Chipmunk, Radio, Megaphone, Narrator.
+- Live pitch, mix, mic gain, noise gate, MUTE, BYPASS and meter controls.
+- Six original synthesized soundboard cues.
+- Portable Win32 GUI, x64; native Go/WinMM processing without runtime dependencies.
+- Outgoing audio is restricted to the virtual cable to reduce accidental audio feedback.
+- No game hooks, automatic Windows default audio changes or automatic reboots.
 
-```bash
-cd source
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-H=windowsgui -s -w' -o ../RiftVoice.exe .
-```
+### Verification status
 
-The local source bundle and release packaging are being transferred into this repository. A compiled build is **not** evidence of in-game verification.
+Go DSP tests and the Windows x64 compilation are checked in the CI workflow. **Full end-to-end microphone, VB-CABLE, Steam and CS2 gameplay verification on physical Windows 11 hardware is still pending**; do not equate passing unit tests with verified stability or zero latency.
 
-## Author
-**by Swir** — [github.com/Swir](https://github.com/Swir)
+### Legal notes
 
-*No DLL injection, game memory hooks, or modifications to CS2 files are required.*
+VB-CABLE is a separate donationware driver by **VB-Audio**, from **www.vb-cable.com**. Donations are welcome; business use may require a license. The original ZIP is bundled unmodified in line with the [VB-Audio distribution terms](https://vb-audio.com/Services/licensing.htm). RiftVoice and VB-CABLE have different publishers.
+
+### Source and CI
+
+Go source files and tests are extracted from the archive in `distribution/` with the versioned upgrade patch. The [release workflow](.github/workflows/build-release.yml) builds on a Windows runner, runs tests, fetches the official vendor ZIP, and publishes an all-in-one release only when packaging succeeds. Go is needed only by developers rebuilding the executable.
+
+**by Swir** — [GitHub profile](https://github.com/Swir)
