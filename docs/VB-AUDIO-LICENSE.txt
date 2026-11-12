@@ -1,0 +1,9 @@
+VB-CABLE by VB-Audio is an independent donationware product.
+Source: https://www.vb-cable.com
+Official legal distribution conditions:
+https://vb-audio.com/Services/licensing.htm
+
+This RiftVoice package distributes the ORIGINAL VB-CABLE driver ZIP as-is
+under the manufacturer's bundling permission. The driver is NOT authored
+or supported by Swir. All donations and participations are welcome.
+Professional and institutional use may require paid vendor licenses.
